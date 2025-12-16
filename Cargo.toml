@@ -14,6 +14,7 @@ pathdiff = "0.2"
 which = "6"
 log = "0.4"
 env_logger = "0.10"
+chrono = "0.4"
 
 [lib]
 name = "mdbook_drawio"
