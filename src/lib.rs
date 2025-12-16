@@ -1,11 +1,13 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use log::{debug, error};
 use mdbook::book::{Book, BookItem, Chapter};
+use std::result::Result::{Ok, Err};
 use mdbook::errors::Error;
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 pub struct DrawioPreprocessor;
 
@@ -60,8 +62,13 @@ impl Preprocessor for DrawioPreprocessor {
             let svg_relative_path = relative_path_from_chapter(ctx, &ch, &svg_path);
             debug!("  Relative link from chapter: {:?}", svg_relative_path);
 
-            // Export the diagram
-            drawio_export(ctx, &absolute_path, page, &svg_path).ok();
+            // Export the diagram only if needed (cache check)
+            if should_generate(&absolute_path, &svg_path) {
+                debug!("  Cache miss or outdated - regenerating diagram");
+                drawio_export(ctx, &absolute_path, page, &svg_path).ok();
+            } else {
+                debug!("  Cache hit - reusing existing SVG");
+            }
 
             // Create a Markdown snippet for the SVG
             let snippet = format!(
@@ -159,7 +166,7 @@ fn drawio_export(
     let result = cmd.output();
 
     match result {
-        std::result::Result::Ok(output) => {
+        Ok(output) => {
             debug!("Command exit status: {:?}", output.status);
             debug!(
                 "Command stdout: {}",
@@ -220,4 +227,51 @@ pub fn relative_path_from_chapter(
     let rel_path = base.join(result_dir).join(target_filename);
     debug!("  Relative path from chapter: {:?}", rel_path);
     rel_path
+}
+
+/// Formats a [`SystemTime`] as a human-readable string
+fn format_time(time: SystemTime) -> String {
+    chrono::DateTime::<chrono::Local>::from(time).format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+/// Determines if the output file needs to be regenerated based on modification times.
+/// Returns true if:
+/// - Output file doesn't exist
+/// - Input file is newer than output file
+fn should_generate(input: &Path, output: &Path) -> bool {
+    debug!("Checking if regeneration needed for {:?} -> {:?}", input, output);
+
+    // If output doesn't exist, we need to generate it
+    if !output.exists() {
+        debug!("  Output file does not exist");
+        return true;
+    }
+
+    // Compare modification times
+    let input_mtime = match std::fs::metadata(input).and_then(|m| m.modified()) {
+        Ok(time) => time,
+        Err(e) => {
+            debug!("  Cannot read input metadata ({}), regenerating.", e);
+            return true;
+        }
+    };
+
+    let output_mtime = match std::fs::metadata(output).and_then(|m| m.modified()) {
+        Ok(time) => time,
+        Err(e) => {
+            debug!("  Cannot read output metadata ({}), regenerating.", e);
+            return true;
+        }
+    };
+
+    // Regenerate if input is newer than output
+    if input_mtime > output_mtime {
+        debug!("  Input modified at {} is newer than output modified at {}",
+               format_time(input_mtime), format_time(output_mtime));
+        true
+    } else {
+        debug!("  Output is up-to-date (input: {}, output: {})",
+               format_time(input_mtime), format_time(output_mtime));
+        false
+    }
 }
