@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v25
+      - uses: cachix/install-nix-action@v31.9.0
       - name: Build mdbook-drawio binary
         run: |
           nix develop --command cargo build
@@ -20,22 +20,22 @@ jobs:
           cd example
           nix develop --command mdbook build
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v25
-      - name: Build mdbook-drawio binary
-        run: |
-          nix develop --command cargo build
-      - name: Build example book
-        run: |
-          cd example
-          nix develop --command mdbook build
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: _build
+  # deploy:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: cachix/install-nix-action@v25
+  #     - name: Build mdbook-drawio binary
+  #       run: |
+  #         nix develop --command cargo build
+  #     - name: Build example book
+  #       run: |
+  #         cd example
+  #         nix develop --command mdbook build
+  #     - name: Deploy to GitHub Pages
+  #       uses: peaceiris/actions-gh-pages@v4
+  #       with:
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+  #         publish_dir: _build
