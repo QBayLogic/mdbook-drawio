@@ -11,41 +11,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # We take this approach instead of `cachix/install-nix-action` because organization
-      # policies disallow actions from non-verified marketplace uploaders
-      - name: Install Nix #
-        run: |
-          curl -L https://nixos.org/nix/install | sh -s -- --daemon
-          sudo tee -a /etc/nix/nix.conf <<EOF
-          experimental-features = nix-command flakes
-          EOF
+      - uses: cachix/install-nix-action@v25
       - name: Build mdbook-drawio binary
         run: |
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
           nix develop --command cargo build
       - name: Build example book
         run: |
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
           cd example
           nix develop --command mdbook build
 
-  # TODO: Figure out how to deploy without using a 3rd-party action
-  # deploy:
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   if: github.ref == 'refs/heads/main'
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: cachix/install-nix-action@v25
-  #     - name: Build mdbook-drawio binary
-  #       run: |
-  #         nix develop --command cargo build
-  #     - name: Build example book
-  #       run: |
-  #         cd example
-  #         nix develop --command mdbook build
-  #     - name: Deploy to GitHub Pages
-  #       uses: peaceiris/actions-gh-pages@v4
-  #       with:
-  #         github_token: ${{ secrets.GITHUB_TOKEN }}
-  #         publish_dir: _build
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Nix dependencies
+        uses: cachix/install-nix-action@v25
+
+      - name: Build mdbook-drawio binary
+        run: |
+          nix develop --command cargo build
+
+      - name: Build example book
+        run: |
+          cd example
+          nix develop --command mdbook build
+
+
+      - name: Upload book artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _build
