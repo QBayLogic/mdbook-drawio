@@ -1,3 +1,5 @@
+[![documentation-badge](https://img.shields.io/badge/example-book-blue)](https://qbaylogic.github.io/mdbook-drawio/)
+
 # mdbook-drawio
 
 A preprocessor for [mdBook](https://github.com/rust-lang/mdBook) that automatically exports [draw.io](https://www.diagrams.net/) diagrams to SVG and embeds them in your book.
