@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use log::{debug, error};
-use mdbook::book::Book;
-use mdbook::preprocess::{Preprocessor, PreprocessorContext};
+use mdbook_preprocessor::book::Book;
+use mdbook_preprocessor::{Preprocessor, PreprocessorContext};
 use std::env;
 use std::io::{self, Read};
 

@@ -1,6 +1,5 @@
 [book]
 authors = ["mdbook-drawio"]
-multilingual = false
 src = "src"
 title = "mdbook-drawio Example"
 
