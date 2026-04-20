@@ -1,9 +1,9 @@
 use anyhow::Result;
 use log::{debug, error};
-use mdbook::book::{Book, BookItem, Chapter};
+use mdbook_preprocessor::book::{Book, BookItem, Chapter};
 use std::result::Result::{Ok, Err};
-use mdbook::errors::Error;
-use mdbook::preprocess::{Preprocessor, PreprocessorContext};
+use mdbook_preprocessor::errors::Error;
+use mdbook_preprocessor::{Preprocessor, PreprocessorContext};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,8 +16,8 @@ impl Preprocessor for DrawioPreprocessor {
         "mdbook-drawio"
     }
 
-    fn supports_renderer(&self, _renderer: &str) -> bool {
-        true
+    fn supports_renderer(&self, _renderer: &str) -> Result<bool, anyhow::Error> {
+        Ok(true)
     }
 
     fn run(&self, ctx: &PreprocessorContext, mut book: Book) -> Result<Book, Error> {
@@ -71,11 +71,8 @@ impl Preprocessor for DrawioPreprocessor {
             }
 
             // Create a Markdown snippet for the SVG
-            let snippet = format!(
-                "![Diagram not found at {}]({})",
-                &svg_relative_path.display(),
-                &svg_relative_path.display()
-            );
+            let alt_text = format!("Diagram {diagram_name} page {}", page + 1);
+            let snippet = format!("![{alt_text}]({})", &svg_relative_path.display());
             log::debug!("Produced Markdown snippet for SVG: {snippet}");
             snippet
         }
@@ -93,7 +90,7 @@ impl Preprocessor for DrawioPreprocessor {
             Ok(())
         }
 
-        for item in book.sections.iter_mut() {
+        for item in book.items.iter_mut() {
             process_item(ctx, item)?;
         }
         Ok(book)
@@ -102,29 +99,36 @@ impl Preprocessor for DrawioPreprocessor {
 
 /// The name of the directory in the book's source that contains the resulting SVG files.
 /// Can be set via [preprocessor.drawio.result-dir] in book.toml
-pub fn get_result_dir(ctx: &PreprocessorContext) -> &str {
-    ctx.config
-        .get("preprocessor.drawio.result-dir")
-        .and_then(|v| v.as_str())
-        .unwrap_or("mdbook-drawio")
+pub fn get_result_dir(ctx: &PreprocessorContext) -> String {
+    get_preprocessor_string(ctx, "result-dir", "mdbook-drawio")
 }
 
 /// The absolute path to the directory where we store our results
 pub fn get_result_dir_abs(ctx: &PreprocessorContext) -> PathBuf {
-    let path = &ctx
-        .root
-        .join(&ctx.config.book.src)
-        .join(get_result_dir(ctx));
+    let path = &ctx.root.join(&ctx.config.book.src).join(get_result_dir(ctx));
     path.to_path_buf()
 }
 
 /// The name of the drawio binary to use.
 /// Can be set via [preprocessor.drawio.drawio-bin] in book.toml
-fn get_drawio_bin(ctx: &PreprocessorContext) -> &str {
-    ctx.config
-        .get("preprocessor.drawio.drawio-bin")
-        .and_then(|v| v.as_str())
-        .unwrap_or("drawio".into())
+fn get_drawio_bin(ctx: &PreprocessorContext) -> String {
+    get_preprocessor_string(ctx, "drawio-bin", "drawio")
+}
+
+fn get_preprocessor_string(
+    ctx: &PreprocessorContext,
+    key: &str,
+    default: &str,
+) -> String {
+    let config_key = format!("preprocessor.drawio.{key}");
+    match ctx.config.get::<String>(&config_key) {
+        Ok(Some(value)) => value,
+        Ok(None) => default.to_string(),
+        Err(err) => {
+            error!("Failed to read `{config_key}` from book config: {err}");
+            default.to_string()
+        }
+    }
 }
 
 /// Returns the regular expression used to match drawio directives in markdown files.
@@ -140,7 +144,8 @@ fn drawio_export(
     page: u32,
     output_path: &Path,
 ) -> Result<(), Error> {
-    let cli_page = page.to_string();
+    // The mdBook directive uses zero-based pages, while draw.io's CLI is one-based.
+    let cli_page = (page + 1).to_string();
     let drawio_cmd = get_drawio_bin(ctx);
 
     debug!("Executing drawio command:");
@@ -151,15 +156,17 @@ fn drawio_export(
 
     let mut cmd = Command::new(drawio_cmd);
     cmd.env("ELECTRON_DISABLE_GPU", "1")
-        .arg("-x")
-        .arg(input)
-        .arg("-p")
-        .arg(&cli_page)
-        .arg("-f")
+        // The Nix drawio wrapper writes to an xvfb frame buffer so wayland does
+        // not work
+        .env_remove("NIXOS_OZONE_WL")
+        .arg("--export")
+        .arg("--format")
         .arg("svg")
-        .arg("-o")
+        .arg("--page-index")
+        .arg(&cli_page)
+        .arg("--output")
         .arg(&output_path)
-				.arg("--no-sandbox"); // Required for some CI environments
+        .arg(input);
 
     debug!("Full command: {cmd:?}");
 
@@ -224,7 +231,7 @@ pub fn relative_path_from_chapter(
     };
     let base = Path::new(&up_dirs);
     let result_dir = get_result_dir(ctx);
-    let rel_path = base.join(result_dir).join(target_filename);
+    let rel_path = base.join(&result_dir).join(target_filename);
     debug!("  Relative path from chapter: {rel_path:?}");
     rel_path
 }
