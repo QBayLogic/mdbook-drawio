@@ -33,7 +33,7 @@ impl Preprocessor for DrawioPreprocessor {
             ctx: &PreprocessorContext,
             ch: &Chapter,
             caps: &regex::Captures,
-        ) -> String {
+        ) -> Result<String, Error> {
             debug!("Processing regex match: {caps:?}");
             let relative_path = caps.get(1).map(|m| m.as_str()).unwrap();
             debug!("  Relative path: {relative_path}");
@@ -65,7 +65,7 @@ impl Preprocessor for DrawioPreprocessor {
             // Export the diagram only if needed (cache check)
             if should_generate(&absolute_path, &svg_path) {
                 debug!("  Cache miss or outdated - regenerating diagram");
-                drawio_export(ctx, &absolute_path, page, &svg_path).ok();
+                drawio_export(ctx, &absolute_path, page, &svg_path)?;
             } else {
                 debug!("  Cache hit - reusing existing SVG");
             }
@@ -74,16 +74,20 @@ impl Preprocessor for DrawioPreprocessor {
             let alt_text = format!("Diagram {diagram_name} page {}", page + 1);
             let snippet = format!("![{alt_text}]({})", &svg_relative_path.display());
             log::debug!("Produced Markdown snippet for SVG: {snippet}");
-            snippet
+            Ok(snippet)
         }
 
         // How we process a chapter
         fn process_chapter(ctx: &PreprocessorContext, ch: &mut Chapter) -> Result<(), Error> {
             let re: Regex = directive_regex();
-            let cow = re.replace_all(&ch.content, |caps: &regex::Captures| {
-                process_match(ctx, &ch, caps)
-            });
-            ch.content = cow.into_owned();
+            let snippets: Vec<String> = re
+                .captures_iter(&ch.content)
+                .map(|caps| process_match(ctx, &ch, &caps))
+                .collect::<Result<_, _>>()?;
+            let mut snippets = snippets.into_iter();
+            ch.content = re
+                .replace_all(&ch.content, |_: &regex::Captures| snippets.next().unwrap())
+                .into_owned();
             for sub in ch.sub_items.iter_mut() {
                 process_item(ctx, sub)?;
             }
@@ -200,13 +204,26 @@ fn drawio_export(
                     String::from_utf8_lossy(&output.stderr)
                 );
             }
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let code = output
+                    .status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                return Err(Error::msg(format!(
+                    "drawio exited with status {code}: {stderr}"
+                )));
+            }
             if !output_path.exists() {
                 return Err(Error::msg("Output file was not created"));
             }
         }
         Err(e) => {
             error!("Failed to execute drawio command: {e}");
-            return Err(Error::msg("Output file was not created"));
+            return Err(Error::msg(format!(
+                "Failed to execute drawio command: {e}"
+            )));
         }
     }
     Ok(())
