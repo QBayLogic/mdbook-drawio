@@ -42,3 +42,4 @@ See the `example/` directory for a working book with diagrams.
 ## Configuration
 - `preprocessor.drawio.result-dir`: Output directory for SVGs (default: `mdbook-drawio`)
 - `preprocessor.drawio.drawio-bin`: Path to the drawio CLI (default: `drawio`)
+- `preprocessor.drawio.drawio-args`: Extra arguments to pass to the drawio invocation

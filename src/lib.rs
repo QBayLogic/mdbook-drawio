@@ -115,6 +115,18 @@ fn get_drawio_bin(ctx: &PreprocessorContext) -> String {
     get_preprocessor_string(ctx, "drawio-bin", "drawio")
 }
 
+fn get_drawio_extra_args(ctx: &PreprocessorContext) -> Vec<String> {
+    let config_key = "preprocessor.drawio.drawio-args";
+    match ctx.config.get::<Vec<String>>(config_key) {
+        Ok(Some(args)) => args,
+        Ok(None) => Vec::new(),
+        Err(err) => {
+            error!("Failed to read `{config_key}` from book config: {err}");
+            Vec::new()
+        }
+    }
+}
+
 fn get_preprocessor_string(
     ctx: &PreprocessorContext,
     key: &str,
@@ -154,6 +166,8 @@ fn drawio_export(
     debug!("  Output file: {output_path:?}");
     debug!("  Page: {cli_page}");
 
+    let extra_args = get_drawio_extra_args(ctx);
+
     let mut cmd = Command::new(drawio_cmd);
     cmd.env("ELECTRON_DISABLE_GPU", "1")
         // The Nix drawio wrapper writes to an xvfb frame buffer so wayland does
@@ -166,6 +180,7 @@ fn drawio_export(
         .arg(&cli_page)
         .arg("--output")
         .arg(&output_path)
+        .args(&extra_args)
         .arg(input);
 
     debug!("Full command: {cmd:?}");
