@@ -1,0 +1,17 @@
+<mxfile host="mdbook-drawio">
+<diagram id="pipeline" name="Pipeline">
+<mxGraphModel grid="1" gridSize="10" page="0">
+<root>
+<mxCell id="0"/>
+<mxCell id="1" parent="0"/>
+<mxCell id="md" value="Markdown" style="rounded=1;whiteSpace=wrap;html=1;fontSize=16;fillColor=#fff2cc;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="120" height="50" as="geometry"/></mxCell>
+<mxCell id="pre" value="mdbook-drawio" style="rounded=1;whiteSpace=wrap;html=1;fontSize=16;fillColor=#ffe6cc;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="200" y="0" width="140" height="50" as="geometry"/></mxCell>
+<mxCell id="html" value="HTML book" style="rounded=1;whiteSpace=wrap;html=1;fontSize=16;fillColor=#dae8fc;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="420" y="0" width="120" height="50" as="geometry"/></mxCell>
+<mxCell id="dio" value="draw.io" style="rounded=1;whiteSpace=wrap;html=1;fontSize=16;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="200" y="110" width="140" height="50" as="geometry"/></mxCell>
+<mxCell id="e1" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#666666;flowAnimation=1;" edge="1" parent="1" source="md" target="pre"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e2" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#666666;flowAnimation=1;" edge="1" parent="1" source="pre" target="html"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e3" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#666666;flowAnimation=1;dashed=1;" edge="1" parent="1" source="pre" target="dio"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root>
+</mxGraphModel>
+</diagram>
+</mxfile>
