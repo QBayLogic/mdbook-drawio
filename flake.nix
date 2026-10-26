@@ -5,9 +5,16 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    # Tool used to manage the changelog, see 'changelog/README.md'. Pinned,
+    # because the flake of later revisions misses the `colorama` dependency.
+    qlog = {
+      url = "github:QBayLogic/qlog/3bea2429e555e969984fbf897216cee74df2f73d";
+      inputs.flake-utils.follows = "flake-utils";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, qlog }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ rust-overlay.overlays.default ];
@@ -23,7 +30,7 @@
         };
         rustPackage = pkgs.rustPlatform.buildRustPackage {
           pname = "mdbook-drawio";
-          version = "0.1.0";
+          version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           # Remember to replace this placeholder hash!
@@ -35,6 +42,7 @@
             mdbook
             drawio-headless
             rustToolchain
+            qlog.packages.${system}.default
           ];
           RUST_BACKTRACE = 1;
         };
