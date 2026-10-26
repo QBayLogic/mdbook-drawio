@@ -12,8 +12,9 @@ use std::sync::Mutex;
 use std::time::{Instant, UNIX_EPOCH};
 
 mod directive;
+mod steps;
 
-pub use directive::{find_directives, Directive};
+pub use directive::{find_directives, Directive, Steps};
 
 pub struct DrawioPreprocessor;
 
@@ -120,6 +121,9 @@ struct Export {
     /// Absolute path of the diagram.
     source: PathBuf,
     page: u32,
+    /// For a step of a step-by-step diagram: the step, and the one-page
+    /// diagram to export instead of `source`.
+    step: Option<(usize, String)>,
     /// Absolute path of the SVG.
     svg: PathBuf,
     /// Hash of everything that affects the SVG, see [`stamp`].
@@ -143,43 +147,13 @@ fn process_chapter(
 
     let mut content = String::with_capacity(ch.content.len());
     let mut last = 0;
+    let mut has_steps = false;
     for directive in &directives {
         debug!("Processing directive: {directive:?}");
-        let svg = svg_path(&directive.path, directive.page);
-        let svg_abs = config.src.join(&config.result_dir).join(&svg);
         let source = ctx.root.join(&directive.path).components().collect::<PathBuf>();
-
-        match exports.get(&svg_abs) {
-            Some(export) if export.source != source => {
-                return Err(format!(
-                    "{} and {} would both be exported to {}",
-                    export.name,
-                    directive.path,
-                    config.result_dir.join(&svg).display()
-                ));
-            }
-            Some(_) => {}
-            None => {
-                let bytes = std::fs::read(&source)
-                    .map_err(|e| format!("cannot read {}: {e}", directive.path))?;
-                let stamp = stamp(config, &bytes, directive.page);
-                let stale = read_stamp(&svg_abs).as_deref() != Some(stamp.as_str());
-                debug!("{svg_abs:?} is {}", if stale { "stale" } else { "up to date" });
-                if stale {
-                    validate_diagram(&bytes, &source, directive.page)
-                        .map_err(|e| format!("{}: {e}", directive.path))?;
-                }
-                let export = Export {
-                    name: directive.path.clone(),
-                    source,
-                    page: directive.page,
-                    svg: svg_abs.clone(),
-                    stamp,
-                    stale,
-                };
-                exports.insert(svg_abs, export);
-            }
-        }
+        let bytes = std::fs::read(&source)
+            .map_err(|e| format!("cannot read {}: {e}", directive.path))?;
+        let in_diagram = |e| format!("{}: {e}", directive.path);
 
         let alt = match &directive.alt {
             Some(alt) => alt.clone(),
@@ -188,13 +162,78 @@ fn process_chapter(
                 format!("Diagram {stem} page {}", directive.page + 1)
             }
         };
-        let link = link_from_chapter(ch.path.as_deref(), &config.result_dir.join(&svg));
+        let link = |svg: &Path| link_from_chapter(ch.path.as_deref(), &config.result_dir.join(svg));
+        let replacement = match directive.steps {
+            None => {
+                let svg = svg_path(&directive.path, directive.page, None);
+                add_export(config, exports, directive, &source, &bytes, &svg, None)?;
+                image_markdown(&alt, &link(&svg))
+            }
+            Some(Steps::Layers) => {
+                has_steps = true;
+                let layers = steps::Layers::read(&bytes, directive.page).map_err(in_diagram)?;
+                let mut links = Vec::new();
+                for step in 0..layers.names.len() {
+                    let svg = svg_path(&directive.path, directive.page, Some(step));
+                    let diagram = (step, layers.step_diagram(step));
+                    add_export(config, exports, directive, &source, &bytes, &svg, Some(diagram))?;
+                    links.push(link(&svg));
+                }
+                steps::figure_html(&alt, &links, &layers.names)
+            }
+        };
         content.push_str(&ch.content[last..directive.range.start]);
-        content.push_str(&image_markdown(&alt, &link));
+        content.push_str(&replacement);
         last = directive.range.end;
     }
     content.push_str(&ch.content[last..]);
+    if has_steps {
+        content.push_str(steps::ASSETS);
+    }
     ch.content = content;
+    Ok(())
+}
+
+/// Adds the export of `svg` (relative to the result directory), unless
+/// another directive added it already.
+fn add_export(
+    config: &Config,
+    exports: &mut BTreeMap<PathBuf, Export>,
+    directive: &Directive,
+    source: &Path,
+    bytes: &[u8],
+    svg: &Path,
+    step: Option<(usize, String)>,
+) -> Result<(), String> {
+    let svg_abs = config.src.join(&config.result_dir).join(svg);
+    if let Some(export) = exports.get(&svg_abs) {
+        if export.source != source {
+            return Err(format!(
+                "{} and {} would both be exported to {}",
+                export.name,
+                directive.path,
+                config.result_dir.join(svg).display()
+            ));
+        }
+        return Ok(());
+    }
+    let stamp = stamp(config, bytes, directive.page, step.as_ref().map(|(n, _)| *n));
+    let stale = read_stamp(&svg_abs).as_deref() != Some(stamp.as_str());
+    debug!("{svg_abs:?} is {}", if stale { "stale" } else { "up to date" });
+    if stale && step.is_none() {
+        validate_diagram(bytes, source, directive.page)
+            .map_err(|e| format!("{}: {e}", directive.path))?;
+    }
+    let export = Export {
+        name: directive.path.clone(),
+        source: source.to_path_buf(),
+        page: directive.page,
+        step,
+        svg: svg_abs.clone(),
+        stamp,
+        stale,
+    };
+    exports.insert(svg_abs, export);
     Ok(())
 }
 
@@ -204,10 +243,13 @@ fn process_chapter(
 /// The SVG keeps the directory of the source, so that diagrams with the same
 /// file name in different directories do not overwrite each other. A source
 /// outside the book root gets a directory named after a hash of its path.
-pub fn svg_path(source: &str, page: u32) -> PathBuf {
+pub fn svg_path(source: &str, page: u32, step: Option<usize>) -> PathBuf {
     let source = Path::new(source);
     let stem = source.file_stem().unwrap().to_string_lossy();
-    let file = format!("{stem}-page-{page}.svg");
+    let file = match step {
+        None => format!("{stem}-page-{page}.svg"),
+        Some(step) => format!("{stem}-page-{page}-step-{step}.svg"),
+    };
     let parent = source.parent().unwrap_or(Path::new(""));
     let mut dir = PathBuf::new();
     for component in parent.components() {
@@ -282,8 +324,8 @@ fn drawio_identity(bin: &str) -> String {
 }
 
 /// A hash of everything that affects the SVG of a page: the diagram, the
-/// page, the draw.io arguments and the draw.io installation.
-fn stamp(config: &Config, source: &[u8], page: u32) -> String {
+/// page and step, the draw.io arguments and the draw.io installation.
+fn stamp(config: &Config, source: &[u8], page: u32, step: Option<usize>) -> String {
     let mut hasher = Sha256::new();
     for part in [b"mdbook-drawio stamp 1".as_slice(), config.drawio_identity.as_bytes()] {
         hasher.update(part);
@@ -294,6 +336,13 @@ fn stamp(config: &Config, source: &[u8], page: u32) -> String {
         hasher.update([0]);
     }
     hasher.update(page.to_le_bytes());
+    match step {
+        None => hasher.update([0]),
+        Some(step) => {
+            hasher.update([1]);
+            hasher.update((step as u64).to_le_bytes());
+        }
+    }
     hasher.update(source);
     hex(&hasher.finalize())
 }
@@ -354,10 +403,23 @@ fn export_all(config: &Config, exports: &[Export]) -> Result<(), Error> {
 
 /// Invokes drawio to export a diagram to SVG format.
 fn drawio_export(config: &Config, export: &Export) -> Result<(), Error> {
-    let Export { name, source, page, svg, stamp, .. } = export;
-    info!("Exporting {name} page {page}");
+    let Export { name, source, page, step, svg, stamp, .. } = export;
     // The mdBook directive uses zero-based pages, while draw.io's CLI is one-based.
-    let cli_page = (page + 1).to_string();
+    let mut cli_page = (page + 1).to_string();
+    let mut input = source.clone();
+    let _step_file = match step {
+        None => {
+            info!("Exporting {name} page {page}");
+            None
+        }
+        Some((step, diagram)) => {
+            info!("Exporting {name} page {page} step {step}");
+            let file = TempFile::new(svg.with_extension("drawio"), diagram)?;
+            input = file.0.clone();
+            cli_page = "1".to_string();
+            Some(file)
+        }
+    };
 
     if let Some(dir) = svg.parent() {
         std::fs::create_dir_all(dir)?;
@@ -379,7 +441,7 @@ fn drawio_export(config: &Config, export: &Export) -> Result<(), Error> {
         .arg("--output")
         .arg(svg)
         .args(&config.drawio_args)
-        .arg(source);
+        .arg(&input);
 
     debug!("Full command: {cmd:?}");
 
@@ -403,21 +465,37 @@ fn drawio_export(config: &Config, export: &Export) -> Result<(), Error> {
     Ok(())
 }
 
+/// A file that is removed when dropped.
+struct TempFile(PathBuf);
+
+impl TempFile {
+    fn new(path: PathBuf, content: &str) -> std::io::Result<TempFile> {
+        std::fs::write(&path, content)?;
+        Ok(TempFile(path))
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn svg_path_keeps_directory() {
-        assert_eq!(svg_path("diagrams/a/overview.drawio", 1), Path::new("diagrams/a/overview-page-1.svg"));
-        assert_eq!(svg_path("./x.drawio", 0), Path::new("x-page-0.svg"));
-        assert_ne!(svg_path("diagrams/a/o.drawio", 0), svg_path("diagrams/b/o.drawio", 0));
+        assert_eq!(svg_path("diagrams/a/overview.drawio", 1, None), Path::new("diagrams/a/overview-page-1.svg"));
+        assert_eq!(svg_path("./x.drawio", 0, Some(2)), Path::new("x-page-0-step-2.svg"));
+        assert_ne!(svg_path("diagrams/a/o.drawio", 0, None), svg_path("diagrams/b/o.drawio", 0, None));
     }
 
     #[test]
     fn svg_path_outside_book_root_stays_in_result_dir() {
-        let a = svg_path("../shared/o.drawio", 0);
-        let b = svg_path("../other/o.drawio", 0);
+        let a = svg_path("../shared/o.drawio", 0, None);
+        let b = svg_path("../other/o.drawio", 0, None);
         assert!(a.starts_with("_external") && b.starts_with("_external"));
         assert_ne!(a, b);
         assert!(a.components().all(|c| matches!(c, Component::Normal(_))));
@@ -466,12 +544,13 @@ mod tests {
             jobs: 1,
             drawio_identity: "drawio 1".into(),
         };
-        let a = stamp(&config, b"<mxfile/>", 0);
-        assert_ne!(a, stamp(&config, b"<mxfile/>", 1));
+        let a = stamp(&config, b"<mxfile/>", 0, None);
+        assert_ne!(a, stamp(&config, b"<mxfile/>", 1, None));
+        assert_ne!(a, stamp(&config, b"<mxfile/>", 0, Some(0)));
         config.drawio_args = vec!["--svg-theme".into(), "light".into()];
-        let b = stamp(&config, b"<mxfile/>", 0);
+        let b = stamp(&config, b"<mxfile/>", 0, None);
         assert_ne!(a, b);
         config.drawio_identity = "drawio 2".into();
-        assert_ne!(b, stamp(&config, b"<mxfile/>", 0));
+        assert_ne!(b, stamp(&config, b"<mxfile/>", 0, None));
     }
 }

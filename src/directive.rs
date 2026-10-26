@@ -29,6 +29,16 @@ pub struct Directive {
     pub page: u32,
     /// Alternative text for the image.
     pub alt: Option<String>,
+    /// Show the diagram step by step.
+    pub steps: Option<Steps>,
+}
+
+/// How a step-by-step diagram is split into steps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Steps {
+    /// Each layer of the page is a step, which adds the layer to the previous
+    /// steps.
+    Layers,
 }
 
 /// Finds all directives in `content`.
@@ -56,6 +66,7 @@ fn parse_attributes(range: Range<usize>, mut input: &str) -> Result<Directive, S
     let mut path = None;
     let mut page = 0;
     let mut alt = None;
+    let mut steps = None;
     while !input.trim().is_empty() {
         let caps = ATTRIBUTE_RE
             .captures(input)
@@ -69,6 +80,10 @@ fn parse_attributes(range: Range<usize>, mut input: &str) -> Result<Directive, S
                     .map_err(|_| format!("page must be a number, not `{value}`"))?
             }
             "alt" => alt = Some(value.to_string()),
+            "steps" => match value {
+                "layers" => steps = Some(Steps::Layers),
+                _ => return Err(format!("steps must be `layers`, not `{value}`")),
+            },
             key => warn!("Ignoring unknown attribute `{key}` in drawio directive"),
         }
         input = &input[caps.get(0).unwrap().end()..];
@@ -77,7 +92,7 @@ fn parse_attributes(range: Range<usize>, mut input: &str) -> Result<Directive, S
     if Path::new(&path).file_stem().is_none() {
         return Err(format!("`{path}` is not a file path"));
     }
-    Ok(Directive { range, path, page, alt })
+    Ok(Directive { range, path, page, alt, steps })
 }
 
 /// Byte ranges of code blocks and inline code.
@@ -116,6 +131,7 @@ mod tests {
                 path: "d/a.drawio".into(),
                 page: 2,
                 alt: Some("A {b}, c".into()),
+                steps: None,
             }]
         );
         assert!(content[d[0].range.clone()].ends_with("}}"));
@@ -126,6 +142,13 @@ mod tests {
         let d = find_directives(r#"{{#drawio path="a.drawio"}}"#).unwrap();
         assert_eq!(d[0].page, 0);
         assert_eq!(d[0].alt, None);
+    }
+
+    #[test]
+    fn parses_steps() {
+        let d = find_directives(r#"{{#drawio path="a.drawio" steps="layers"}}"#).unwrap();
+        assert_eq!(d[0].steps, Some(Steps::Layers));
+        assert!(find_directives(r#"{{#drawio path="a.drawio" steps="pages"}}"#).is_err());
     }
 
     #[test]
