@@ -9,6 +9,7 @@ This changelog is generated from the entries in `changelog/entries`, see
 - Directives accept an `alt` attribute that sets the alternative text of the diagram, for example `{{#drawio path="diagrams/system.drawio" alt="Block diagram of the system"}}`. Without it, the text is `Diagram <name> page <N>`, as before.
   [#5](https://github.com/QBayLogic/mdbook-drawio/issues/5)
 - Step-by-step diagrams: `{{#drawio path="..." steps="layers"}}` shows a page one layer at a time, with buttons to go through the steps or play them. The layer names are the captions of the steps. Without JavaScript, and in print, the whole diagram is shown.
+  [#15](https://github.com/QBayLogic/mdbook-drawio/pull/15)
 
 ### Changed:
 - The `page` attribute is optional and defaults to 0. A malformed directive, such as one without `path`, is now an error that names the chapter, instead of being left in the page.
