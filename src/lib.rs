@@ -4,10 +4,13 @@ use mdbook_preprocessor::book::{Book, BookItem, Chapter};
 use std::result::Result::{Ok, Err};
 use mdbook_preprocessor::errors::Error;
 use mdbook_preprocessor::{Preprocessor, PreprocessorContext};
-use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
+
+mod directive;
+
+pub use directive::{find_directives, Directive};
 
 pub struct DrawioPreprocessor;
 
@@ -28,21 +31,15 @@ impl Preprocessor for DrawioPreprocessor {
             }
         }
 
-        // How we process a regex match
-        fn process_match(
+        // How we process a directive
+        fn process_directive(
             ctx: &PreprocessorContext,
             ch: &Chapter,
-            caps: &regex::Captures,
+            directive: &Directive,
         ) -> Result<String, Error> {
-            debug!("Processing regex match: {caps:?}");
-            let relative_path = caps.get(1).map(|m| m.as_str()).unwrap();
-            debug!("  Relative path: {relative_path}");
-
-            let page = caps
-                .get(2)
-                .and_then(|m| m.as_str().parse::<u32>().ok())
-                .unwrap();
-            debug!("  Page: {page}");
+            debug!("Processing directive: {directive:?}");
+            let relative_path = &directive.path;
+            let page = directive.page;
 
             let absolute_path = ctx.root.join(relative_path);
             debug!("  Absolute path: {absolute_path:?}");
@@ -71,23 +68,29 @@ impl Preprocessor for DrawioPreprocessor {
             }
 
             // Create a Markdown snippet for the SVG
-            let alt_text = format!("Diagram {diagram_name} page {}", page + 1);
-            let snippet = format!("![{alt_text}]({})", &svg_relative_path.display());
+            let alt_text = match &directive.alt {
+                Some(alt) => alt.clone(),
+                None => format!("Diagram {diagram_name} page {}", page + 1),
+            };
+            let snippet = image_markdown(&alt_text, &svg_relative_path.display().to_string());
             log::debug!("Produced Markdown snippet for SVG: {snippet}");
             Ok(snippet)
         }
 
         // How we process a chapter
         fn process_chapter(ctx: &PreprocessorContext, ch: &mut Chapter) -> Result<(), Error> {
-            let re: Regex = directive_regex();
-            let snippets: Vec<String> = re
-                .captures_iter(&ch.content)
-                .map(|caps| process_match(ctx, &ch, &caps))
-                .collect::<Result<_, _>>()?;
-            let mut snippets = snippets.into_iter();
-            ch.content = re
-                .replace_all(&ch.content, |_: &regex::Captures| snippets.next().unwrap())
-                .into_owned();
+            let directives = find_directives(&ch.content).map_err(|e| {
+                Error::msg(format!("{}: {e}", ch.path.as_deref().unwrap_or(Path::new(&ch.name)).display()))
+            })?;
+            let mut content = String::with_capacity(ch.content.len());
+            let mut last = 0;
+            for directive in &directives {
+                content.push_str(&ch.content[last..directive.range.start]);
+                content.push_str(&process_directive(ctx, ch, directive)?);
+                last = directive.range.end;
+            }
+            content.push_str(&ch.content[last..]);
+            ch.content = content;
             for sub in ch.sub_items.iter_mut() {
                 process_item(ctx, sub)?;
             }
@@ -147,10 +150,16 @@ fn get_preprocessor_string(
     }
 }
 
-/// Returns the regular expression used to match drawio directives in markdown files.
-/// Intended usage: {{#drawio path="path/to/diagram" page=1}}
-pub fn directive_regex() -> Regex {
-    Regex::new(r#"\{\{#drawio\s+path=\"([^\"]+)\"\s+page=([0-9]+)[^}]*\}\}"#).unwrap()
+/// A Markdown image. The link is in angle brackets so that it may contain spaces.
+fn image_markdown(alt: &str, link: &str) -> String {
+    let mut escaped = String::with_capacity(alt.len());
+    for c in alt.chars() {
+        if matches!(c, '\\' | '[' | ']') {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    format!("![{escaped}](<{link}>)")
 }
 
 /// Invokes drawio to export a diagram to SVG format.
@@ -273,7 +282,7 @@ pub fn relative_path_from_chapter(
 
 /// Formats a [`SystemTime`] as a human-readable string
 fn format_time(time: SystemTime) -> String {
-    chrono::DateTime::<chrono::Local>::from(time).format("%Y-%m-%d %H:%M:%S").to_string()
+    format!("{time:?}")
 }
 
 /// Determines if the output file needs to be regenerated based on modification times.
