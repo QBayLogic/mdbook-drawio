@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use log::{debug, error};
+use log::debug;
 use mdbook_preprocessor::book::Book;
 use mdbook_preprocessor::{Preprocessor, PreprocessorContext};
 use std::env;
@@ -46,10 +46,7 @@ fn main() -> Result<()> {
     debug!("Book context: {:?}", ctx);
 
     let pre = DrawioPreprocessor;
-    let out = pre.run(&ctx, book).map_err(|e| {
-        error!("Preprocessing failed: {}", e);
-        anyhow::anyhow!("{}", e)
-    })?;
+    let out = pre.run(&ctx, book)?;
 
     debug!("Preprocessing completed successfully");
     println!("{}", serde_json::to_string(&out)?);
