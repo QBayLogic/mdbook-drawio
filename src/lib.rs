@@ -177,6 +177,9 @@ fn drawio_export(
         // The Nix drawio wrapper writes to an xvfb frame buffer so wayland does
         // not work
         .env_remove("NIXOS_OZONE_WL")
+        // Some tools (e.g. Electron-based editors) set this for their child
+        // processes, which makes draw.io start as plain Node.js and fail.
+        .env_remove("ELECTRON_RUN_AS_NODE")
         .arg("--export")
         .arg("--format")
         .arg("svg")
