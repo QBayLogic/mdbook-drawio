@@ -1,0 +1,28 @@
+.mdbook-drawio-steps { margin: 1em 0; }
+.mdbook-drawio-steps:focus-visible { outline: 2px solid var(--links, currentColor); outline-offset: 4px; }
+.mdbook-drawio-frames { display: grid; justify-items: start; }
+.mdbook-drawio-frames > img { grid-area: 1 / 1; transition: opacity 0.3s, visibility 0.3s; }
+/* Without the script, only the last step (the whole diagram) is shown. */
+.mdbook-drawio-frames > img:not(:last-child),
+.mdbook-drawio-ready .mdbook-drawio-frames > img { opacity: 0; visibility: hidden; }
+.mdbook-drawio-ready .mdbook-drawio-frames > img.mdbook-drawio-active { opacity: 1; visibility: visible; }
+/* Later steps are on top. During a change of step the lower frame stays fully
+   visible, so only the added (or removed) shapes fade. */
+.mdbook-drawio-ready .mdbook-drawio-frames > img.mdbook-drawio-under { opacity: 1; visibility: visible; transition: none; }
+.mdbook-drawio-controls { display: flex; align-items: center; gap: 0.4em; margin-top: 0.5em; }
+.mdbook-drawio-controls[hidden] { display: none; }
+.mdbook-drawio-controls button {
+  font: inherit; min-width: 2.2em; padding: 0.1em 0.5em; cursor: pointer;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--theme-popup-border, currentColor); border-radius: 4px;
+}
+.mdbook-drawio-controls button:hover { background: var(--theme-hover, transparent); }
+.mdbook-drawio-label { margin-left: 0.4em; font-size: 0.9em; }
+@media (prefers-reduced-motion: reduce) {
+  .mdbook-drawio-frames > img { transition: none; }
+}
+@media print {
+  .mdbook-drawio-controls { display: none !important; }
+  .mdbook-drawio-ready .mdbook-drawio-frames > img { opacity: 0 !important; visibility: hidden !important; }
+  .mdbook-drawio-ready .mdbook-drawio-frames > img:last-child { opacity: 1 !important; visibility: visible !important; }
+}

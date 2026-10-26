@@ -1,8 +1,20 @@
 # Introduction
 
-This is an example book to verify the dev shell and build toolchain.
+This book shows every feature of
+[mdbook-drawio](https://github.com/QBayLogic/mdbook-drawio), a preprocessor
+that exports [draw.io](https://www.drawio.com/) diagrams to SVG and embeds
+them in an mdBook.
 
-{{#drawio path="diagrams/hello.drawio" page=0}}
+Write a directive in your Markdown:
 
-{{#drawio path="diagrams/subdiagrams/sub.drawio" page=0}}
+```md
+{{#drawio path="diagrams/hello.drawio"}}
+```
 
+and the diagram appears in the book:
+
+{{#drawio path="diagrams/hello.drawio"}}
+
+The diagrams of this book are in the `example/diagrams` folder. Each chapter
+shows one feature, and the source of each chapter is a good place to see how
+the directives are written.

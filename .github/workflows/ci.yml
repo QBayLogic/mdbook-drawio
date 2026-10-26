@@ -20,6 +20,24 @@ jobs:
           cd example
           nix develop --command mdbook build
 
+  changelog:
+    name: Check changelog entries
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v25
+      - name: Check added and changed entries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git diff --name-only --diff-filter=d "origin/${{ github.base_ref }}...HEAD" -- changelog/entries \
+            | grep '\.md$' > changed-entries.txt || true
+          nix develop --command bash -c \
+            'set -e; while read -r entry; do qlog check -t "$entry"; done < changed-entries.txt'
+
   deploy:
     needs: build
     runs-on: ubuntu-latest

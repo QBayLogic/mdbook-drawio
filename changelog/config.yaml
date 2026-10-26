@@ -1,0 +1,4 @@
+project: "QBayLogic/mdbook-drawio"
+md_pr_link: "[#{pr}]({pr_url})"
+# No colons, so that the file names are valid on Windows.
+time_format: "%Y-%m-%dT%H_%M_%S"

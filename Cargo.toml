@@ -14,7 +14,11 @@ pathdiff = "0.2"
 which = "6"
 log = "0.4"
 env_logger = "0.10"
-chrono = "0.4"
+pulldown-cmark = { version = "0.13.5", default-features = false }
+roxmltree = "0.21.2"
+sha2 = "0.11.1"
+base64 = "0.23.1"
+miniz_oxide = "0.9.1"
 
 [lib]
 name = "mdbook_drawio"

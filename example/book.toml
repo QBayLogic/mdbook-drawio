@@ -12,3 +12,4 @@ command = "../target/debug/mdbook-drawio"
 result-dir = "gen/drawio"
 drawio-bin = "drawio"
 drawio-args = ["--no-sandbox"]
+jobs = 4
